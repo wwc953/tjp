@@ -545,12 +545,14 @@ class TjpApplicationTests {
     }
 
 
+    @SneakyThrows
     @PostConstruct
     public void readMgtOrgCodeList() {
         initProList();
 
         List<MgtOrgDTO> result = new ArrayList<>(2000);
-        EasyExcel.read("src/main/resources/doc/组织树数据.xls", MgtOrgDTO.class, new ReadListener<MgtOrgDTO>() {
+        File file = resourceLoader.getResource("classpath:templates/组织树数据.xls").getFile();
+        EasyExcel.read(file, MgtOrgDTO.class, new ReadListener<MgtOrgDTO>() {
             @Override
             public void invoke(MgtOrgDTO dto, AnalysisContext analysisContext) {
                 result.add(dto);
