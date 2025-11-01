@@ -12,11 +12,10 @@ import java.io.Serializable;
 import java.util.Date;
 
 @Data
-//@Document(indexName = "loginfo_#{T(java.time.LocalDate).now().toString()}")
-@Document(indexName = "loginfo")
-@Setting(replicas = 0)
-public class IndexOrNameData implements Serializable {
-    private String _class;
+@Document(indexName = "loginfo_#{T(java.time.LocalDate).now().toString()}")
+//@Document(indexName = "loginfo")
+@Setting(settingPath = "/json/setting.json")
+public class IndexOrNameData {
 
     @Id
     private String id;
@@ -43,7 +42,6 @@ public class IndexOrNameData implements Serializable {
     private String viewType;
 
     @ExcelProperty("操作时间")
-//    @DateTimeFormat("yyyy-MM-dd HH:mm:ss")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @Field(type = FieldType.Date, format = {}, pattern = "yyyy-MM-dd HH:mm:ss")
     private Date systemTime;

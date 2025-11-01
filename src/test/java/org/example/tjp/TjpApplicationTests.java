@@ -5,8 +5,6 @@ import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.aggregations.*;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
-import co.elastic.clients.elasticsearch.core.BulkRequest;
-import co.elastic.clients.elasticsearch.core.BulkResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -43,7 +41,6 @@ import org.springframework.core.io.ResourceLoader;
 
 import java.beans.PropertyDescriptor;
 import java.io.File;
-import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -54,7 +51,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @SpringBootTest
 class TjpApplicationTests {
-    String fileName = "2025-08-07.xlsx";
+    String fileName = "2025-10-30.xlsx";
     String readFilePath = "src/main/resources/xlsx/" + fileName;
     String day = fileName.split("\\.")[0].replaceAll("-", "");
     String index = "loginfo";
@@ -90,7 +87,7 @@ class TjpApplicationTests {
 //        index = index_all;
 
         Arrays.asList("32101", "32401", "32402").forEach(v -> {
-            expDay(ContantUtil.CITY, Arrays.asList(v));
+            expDay(ContantUtil.CITY, List.of(v));
         });
 
         //睢宁县供电公司、高邮供电公司省网
@@ -100,7 +97,7 @@ class TjpApplicationTests {
 
         //溧水,睢宁
         Arrays.asList("3240106", "3240307").forEach(v -> {
-            expDay(ContantUtil.COUNTRY, Arrays.asList(v),
+            expDay(ContantUtil.COUNTRY, List.of(v),
 //                    Arrays.asList("ywbl", "sbck"),//业务办理、设备操控
                     true);
         });
@@ -112,6 +109,7 @@ class TjpApplicationTests {
     public void batchImport() throws Exception {
         Resource resource = resourceLoader.getResource("classpath:xlsx2/");
         File[] files = resource.getFile().listFiles();
+        assert files != null : "no files";
         System.out.println("文件:" + files.length);
         ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         CountDownLatch cd = new CountDownLatch(files.length);
@@ -298,10 +296,9 @@ class TjpApplicationTests {
                 dataList.add(expVO);
             }
         } else {
-            Iterator<MgtOrgDTO> it = codeMap.values().iterator();
-            while (it.hasNext()) {
+            for (MgtOrgDTO mgtOrgDTO : codeMap.values()) {
                 ExpVO expVO = new ExpVO();
-                BeanUtils.copyProperties(it.next(), expVO);
+                BeanUtils.copyProperties(mgtOrgDTO, expVO);
                 dataList.add(expVO);
             }
         }
@@ -344,7 +341,8 @@ class TjpApplicationTests {
             BeanUtils.copyProperties(v, expVOExpNew);
             res.add(expVOExpNew);
         });
-        EasyExcel.write(fileName, ExpVOExpNew.class).excludeColumnFieldNames(excludeColumnFieldNames).useDefaultStyle(false).registerWriteHandler(new LongestMatchColumnWidthStyleStrategy()).sheet("").doWrite(res);
+        EasyExcel.write(fileName, ExpVOExpNew.class).excludeColumnFieldNames(excludeColumnFieldNames)
+                .useDefaultStyle(false).registerWriteHandler(new LongestMatchColumnWidthStyleStrategy()).sheet("").doWrite(res);
 
 
     }
@@ -352,15 +350,16 @@ class TjpApplicationTests {
     @SneakyThrows
     public void refresh(String index) {
         RefreshResponse refresh = esClient.indices().refresh(new RefreshRequest.Builder().index(index).build());
-        System.out.println("refresh res===" + refresh.shards().toString());
+        System.out.println("refresh res===" + refresh.shards());
     }
 
+    @Test
     public void expDetail() {
         List<QueryAO> initList = new ArrayList<>();
-        initList.add(new QueryAO("南京", Arrays.asList("32401"), ContantUtil.CITY));
-        initList.add(new QueryAO("无锡", Arrays.asList("32402"), ContantUtil.CITY));
-//        initList.add(new QueryAO("苏州", Arrays.asList("32405"), ContantUtil.CITY));
-        initList.add(new QueryAO("徐州睢宁公司", Arrays.asList("3240307")));
+        initList.add(new QueryAO("南京", List.of("32401"), ContantUtil.CITY));
+        initList.add(new QueryAO("无锡", List.of("32402"), ContantUtil.CITY));
+//        initList.add(new QueryAO("苏州", List.of("32405"), ContantUtil.CITY));
+        initList.add(new QueryAO("徐州睢宁公司", List.of("3240307")));
         initList.add(new QueryAO("扬州高邮公司", Arrays.asList("3241004", "3241008")));
         List<List<IndexOrNameDataVO>> resultDataList = new ArrayList<>();
         initList.forEach(ao -> {
@@ -382,10 +381,6 @@ class TjpApplicationTests {
 
     /**
      * 查询日志明细
-     *
-     * @param codeList
-     * @return
-     * @throws Exception
      */
     @SneakyThrows
     public List<IndexOrNameDataVO> queryLogList(List<String> codeList, String queryType) {
@@ -427,12 +422,11 @@ class TjpApplicationTests {
     }
 
     public TermsQuery buildTermsQuery(String field, List<String> value) {
-        TermsQuery termsQuery = TermsQuery.of(t -> t.field(field).terms(
+        return TermsQuery.of(t -> t.field(field).terms(
                 new TermsQueryField.Builder().value(
-                        value.stream().map(v -> FieldValue.of(v)).collect(Collectors.toList())
+                        value.stream().map(FieldValue::of).collect(Collectors.toList())
                 ).build())
         );
-        return termsQuery;
     }
 
     public void initProList() {
@@ -457,12 +451,11 @@ class TjpApplicationTests {
         if (root && !"32101".equals(mgtOrgCode)) {
             list.add(codeMap.get(mgtOrgCode));
         }
-        List<ExpVO> collect = list.stream().map(v -> {
+        return list.stream().map(v -> {
             ExpVO expVO = new ExpVO();
             BeanUtils.copyProperties(v, expVO);
             return expVO;
         }).sorted(Comparator.comparing(ExpVO::getMgtOrgCode)).collect(Collectors.toList());
-        return collect;
     }
 
     @SneakyThrows
@@ -484,8 +477,8 @@ class TjpApplicationTests {
         EasyExcel.read(file, IndexOrNameData.class, new ReadListener<IndexOrNameData>() {
             int blank = 0;
             int total = 0;
-            int BATCH_COUNT = 500;
-            List dataList = ListUtils.newArrayListWithExpectedSize(BATCH_COUNT);
+            final int BATCH_COUNT = 500;
+            List<IndexOrNameData> dataList = ListUtils.newArrayListWithExpectedSize(BATCH_COUNT);
             int insert = 0;
 
             @SneakyThrows
@@ -534,7 +527,7 @@ class TjpApplicationTests {
     }
 
     @SneakyThrows
-    public Boolean batchCreateUserDocument(List<IndexOrNameData> list) {
+    public void batchCreateUserDocument(List<IndexOrNameData> list) {
 //        BulkRequest.Builder br = new BulkRequest.Builder();
 //        for (IndexOrNameData product : list) {
 //            br.operations(op -> op
@@ -549,7 +542,6 @@ class TjpApplicationTests {
 //        return result.errors();
 
         indexOrNameDataEsDao.saveAll(list);
-        return null;
     }
 
 
@@ -569,7 +561,7 @@ class TjpApplicationTests {
             }
         }).sheet().doRead();
 
-        codeMap = result.stream().collect(Collectors.toMap(v -> v.getMgtOrgCode(), v -> v));
+        codeMap = result.stream().collect(Collectors.toMap(MgtOrgDTO::getMgtOrgCode, v -> v));
         rootChildList = result.stream().filter(v -> StringUtils.isNotBlank(v.getPrMgtOrgCode())).collect(Collectors.groupingBy(MgtOrgDTO::getPrMgtOrgCode));
     }
 
@@ -577,7 +569,7 @@ class TjpApplicationTests {
     @AllArgsConstructor
     @RequiredArgsConstructor
     @NoArgsConstructor
-    public class QueryAO {
+    public static class QueryAO {
         @NonNull
         private String sheetName;
         @NonNull
