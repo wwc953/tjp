@@ -12,8 +12,8 @@ import java.io.Serializable;
 import java.util.Date;
 
 @Data
-@Document(indexName = "loginfo_#{T(java.time.LocalDate).now().toString()}")
-//@Document(indexName = "loginfo")
+//@Document(indexName = "loginfo_#{T(java.time.LocalDate).now().toString().replaceAll(\"-\", \"\")}")
+@Document(indexName = "loginfo")
 @Setting(settingPath = "/json/setting.json")
 public class IndexOrNameData {
 

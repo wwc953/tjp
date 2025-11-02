@@ -5,6 +5,8 @@ import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.aggregations.*;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
+import co.elastic.clients.elasticsearch.core.DeleteByQueryRequest;
+import co.elastic.clients.elasticsearch.core.DeleteByQueryResponse;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -41,6 +43,8 @@ import org.springframework.core.io.ResourceLoader;
 
 import java.beans.PropertyDescriptor;
 import java.io.File;
+import java.text.SimpleDateFormat;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -77,6 +81,7 @@ class TjpApplicationTests {
     @SneakyThrows
     @Test
     public void doDay() {
+        delByQuery();
         importData(new File(readFilePath));
         refresh(index);
         doExpAll();
@@ -134,6 +139,21 @@ class TjpApplicationTests {
         executorService.shutdown();
         refresh(index);
         doExpAll();
+    }
+
+    @SneakyThrows
+    @Test
+    public void delByQuery() {
+        log.info("{}", day);
+        DeleteByQueryResponse deleteByQueryResponse = esClient.deleteByQuery(DeleteByQueryRequest.of(
+                q -> q.query(
+                        DateRangeQuery.of(a -> a.field("systemTime")
+                                .format("yyyyMMdd").timeZone("+08:00")
+                                .gte(day).lte(day)
+                        )._toRangeQuery()
+                ).index(index)
+        ));
+        log.info("deleteByQuery {}", deleteByQueryResponse.deleted());
     }
 
     public void expDay(String type, List<String> mgtOrgCode) {
@@ -484,6 +504,10 @@ class TjpApplicationTests {
             @SneakyThrows
             @Override
             public void invoke(IndexOrNameData dto, AnalysisContext analysisContext) {
+//                if (StringUtils.equals(dto.getHandleId(), "jiangs18")) {
+//                    SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+//                    System.out.println("jiangs18--" + format.format(dto.getSystemTime()));
+//                }
                 dto.setCityCode(StringUtils.substring(dto.getMgtOrgCode(), 0, 5));
                 dto.setCityCodeName(codeMap.get(dto.getCityCode()).getMgtOrgCodeName());
                 dto.setCountryCode(StringUtils.substring(dto.getMgtOrgCode(), 0, 7));
