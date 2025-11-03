@@ -5,10 +5,7 @@ import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.aggregations.*;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
-import co.elastic.clients.elasticsearch.core.DeleteByQueryRequest;
-import co.elastic.clients.elasticsearch.core.DeleteByQueryResponse;
-import co.elastic.clients.elasticsearch.core.SearchRequest;
-import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.*;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.indices.RefreshRequest;
 import co.elastic.clients.elasticsearch.indices.RefreshResponse;
@@ -118,6 +115,7 @@ class TjpApplicationTests {
         System.out.println("文件:" + files.length);
         ExecutorService executorService = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         CountDownLatch cd = new CountDownLatch(files.length);
+        long beg = System.currentTimeMillis();
         for (File file : files) {
             executorService.execute(() -> {
                 String fileName = file.getName();
@@ -138,6 +136,7 @@ class TjpApplicationTests {
         cd.await();
         executorService.shutdown();
         refresh(index);
+        System.out.println("导入耗时:" + (System.currentTimeMillis() - beg));
         doExpAll();
     }
 
@@ -565,6 +564,17 @@ class TjpApplicationTests {
 //        BulkResponse result = esClient.bulk(br.build());
 //        return result.errors();
 
+        //导入耗时:393151 saveAll
+        // size: 590Mi (590Mi)
+        //docs: 2,693,827 (2,693,827)
+
+        //导入耗时:158047 bulk
+//        size: 585Mi (585Mi)
+//        docs: 2,693,827 (2,693,827)
+
+        //导入耗时:125863 6.3 bulk
+        // size: 671Mi (671Mi)
+        // docs: 2,693,827 (2,693,827)
         indexOrNameDataEsDao.saveAll(list);
     }
 
