@@ -7,6 +7,8 @@ import co.elastic.clients.elasticsearch._types.aggregations.*;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
 import co.elastic.clients.elasticsearch.core.*;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.indices.CreateIndexRequest;
+import co.elastic.clients.elasticsearch.indices.CreateIndexResponse;
 import co.elastic.clients.elasticsearch.indices.RefreshRequest;
 import co.elastic.clients.elasticsearch.indices.RefreshResponse;
 import co.elastic.clients.util.NamedValue;
@@ -40,8 +42,6 @@ import org.springframework.core.io.ResourceLoader;
 
 import java.beans.PropertyDescriptor;
 import java.io.File;
-import java.text.SimpleDateFormat;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -78,6 +78,7 @@ class TjpApplicationTests {
     @SneakyThrows
     @Test
     public void doDay() {
+        createIndex();
         delByQuery();
         importData(new File(readFilePath));
         refresh(index);
@@ -107,8 +108,10 @@ class TjpApplicationTests {
 //        expDay(ContantUtil.MGT, null, false);
     }
 
+    @SneakyThrows
     @Test
-    public void batchImport() throws Exception {
+    public void batchImport() {
+        createIndex();
         Resource resource = resourceLoader.getResource("classpath:xlsx2/");
         File[] files = resource.getFile().listFiles();
         assert files != null : "no files";
@@ -496,7 +499,7 @@ class TjpApplicationTests {
         EasyExcel.read(file, IndexOrNameData.class, new ReadListener<IndexOrNameData>() {
             int blank = 0;
             int total = 0;
-            final int BATCH_COUNT = 500;
+            final int BATCH_COUNT = 1000;
             List<IndexOrNameData> dataList = ListUtils.newArrayListWithExpectedSize(BATCH_COUNT);
             int insert = 0;
 
@@ -550,18 +553,52 @@ class TjpApplicationTests {
     }
 
     @SneakyThrows
+    public boolean indexExists(String indexName) {
+        return esClient.indices().exists(b -> b.index(indexName)).value();
+    }
+
+    @SneakyThrows
+    public void createIndex() {
+        if (indexExists(index)) {
+            System.out.println(index + ",已存在");
+            return;
+        }
+        CreateIndexRequest request = CreateIndexRequest.of(b -> b
+                .index(index)
+                .mappings(m -> m
+                        .properties("systemTime", p -> p
+                                .date(d -> d.format("yyyy-MM-dd HH:mm:ss"))
+                        )
+                        .properties("procName", p -> p
+                                .text(t -> t
+                                        .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(256)))
+                                )
+                        )
+                )
+                .settings(s -> s
+                        .numberOfShards("1")
+                        .numberOfReplicas("0")
+                        .maxResultWindow(Integer.MAX_VALUE)
+                )
+        );
+        CreateIndexResponse createIndexResponse = esClient.indices().create(request);
+        System.out.println("createIndexResponse:" + createIndexResponse.acknowledged());
+    }
+
+    @SneakyThrows
     public void batchCreateUserDocument(List<IndexOrNameData> list) {
-//        BulkRequest.Builder br = new BulkRequest.Builder();
-//        for (IndexOrNameData product : list) {
-//            br.operations(op -> op
-//                    .index(idx -> idx
-//                            .index(index)
-//                            .id(product.getId())
-//                            .document(product)
-//                    )
-//            );
-//        }
-//        BulkResponse result = esClient.bulk(br.build());
+        BulkRequest.Builder br = new BulkRequest.Builder();
+        for (IndexOrNameData product : list) {
+            br.operations(op -> op
+                    .index(idx -> idx
+                            .index(index)
+                            .id(product.getId())
+                            .document(product)
+                    )
+            );
+        }
+        BulkResponse result = esClient.bulk(br.build());
+//        System.out.println(result.errors());
 //        return result.errors();
 
         //导入耗时:393151 saveAll
@@ -575,7 +612,7 @@ class TjpApplicationTests {
         //导入耗时:125863 6.3 bulk
         // size: 671Mi (671Mi)
         // docs: 2,693,827 (2,693,827)
-        indexOrNameDataEsDao.saveAll(list);
+//        indexOrNameDataEsDao.saveAll(list);
     }
 
 
