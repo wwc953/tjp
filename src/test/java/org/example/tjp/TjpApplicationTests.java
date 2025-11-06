@@ -53,10 +53,11 @@ import java.util.stream.Collectors;
 @Slf4j
 @SpringBootTest
 class TjpApplicationTests {
-    String fileName = "2025-10-30.xlsx";
-    String readFilePath = "src/main/resources/xlsx/" + fileName;
-    String day = fileName.split("\\.")[0].replaceAll("-", "");
     String index = "loginfo";
+    String day = "2025-11-05";
+    //    String readFilePath = "src/main/resources/xlsx/" + day + ".xlsx";
+    String readFilePath = "/Users/wangwc/Desktop/日志明细/" + day + ".xlsx";
+    //    String day = fileName.split("\\.")[0].replaceAll("-", "");
     String path = "src/main/resources/xlsx/";
 
     //求和
@@ -138,17 +139,31 @@ class TjpApplicationTests {
         doExpAll();
     }
 
-    @SneakyThrows
+    public RangeQuery buildDateQuery() {
+        return DateRangeQuery.of(a -> a.field("systemTime").format("yyyy-MM-dd")
+//                        .timeZone("+08:00")
+                        .gte(day).lte(day)
+        )._toRangeQuery();
+    }
+
     @Test
+    @SneakyThrows
     public void delByQuery() {
-        log.info("{}", day);
-        DeleteByQueryResponse deleteByQueryResponse = esClient.deleteByQuery(DeleteByQueryRequest.of(q -> q.query(DateRangeQuery.of(a -> a.field("systemTime").format("yyyyMMdd").timeZone("+08:00").gte(day).lte(day))._toRangeQuery()).index(index)));
+        DeleteByQueryResponse deleteByQueryResponse = esClient.deleteByQuery(DeleteByQueryRequest.of(q ->
+                q.query(buildDateQuery()).index(index)));
         log.info("deleteByQuery {}", deleteByQueryResponse.deleted());
     }
 
     @SneakyThrows
     public void expDay(String type, List<String> mgtOrgCode, List<String> excludeColumnFieldNameList, boolean next) {
-        BoolQuery.Builder rootQuery = QueryBuilders.bool().must(QueryBuilders.bool().mustNot(buildTermsQuery("operView.keyword", Arrays.asList("退出机器人", "连接成功", "连接失败", "关闭助理", "通知唤醒", "初始化机器人"))).mustNot(QueryBuilders.bool().mustNot(QueryBuilders.exists(e -> e.field("linkName"))).mustNot(buildTermsQuery("operView.keyword", Arrays.asList("语音唤醒", "点击唤醒"))).build()).build());
+        BoolQuery.Builder rootQuery = QueryBuilders.bool()
+                .must(QueryBuilders.bool()
+                        .mustNot(buildTermsQuery("operView.keyword", Arrays.asList("退出机器人", "连接成功", "连接失败", "关闭助理", "通知唤醒", "初始化机器人")))
+                        .mustNot(QueryBuilders.bool()
+                                .mustNot(QueryBuilders.exists(e -> e.field("linkName")))
+                                .mustNot(buildTermsQuery("operView.keyword", Arrays.asList("语音唤醒", "点击唤醒")))
+                                .build())
+                        .build());
 
         if (CollectionUtils.isNotEmpty(mgtOrgCode)) {
             if (ContantUtil.CITY.equals(type) && !"32101".equals(mgtOrgCode.get(0))) {
@@ -161,6 +176,7 @@ class TjpApplicationTests {
                 rootQuery.filter(buildTermsQuery("mgtOrgCode.keyword", mgtOrgCode));
             }
         }
+        rootQuery.filter(buildDateQuery());
 
         BoolQuery build = rootQuery.build();
 
@@ -500,7 +516,11 @@ class TjpApplicationTests {
             System.out.println(index + ",已存在");
             return;
         }
-        CreateIndexRequest request = CreateIndexRequest.of(b -> b.index(index).mappings(m -> m.properties("systemTime", p -> p.date(d -> d.format("yyyy-MM-dd HH:mm:ss")))).settings(s -> s.numberOfShards("1").numberOfReplicas("0").maxResultWindow(Integer.MAX_VALUE)));
+        CreateIndexRequest request = CreateIndexRequest.of(b -> b.index(index)
+                .mappings(m -> m.properties("systemTime", p -> p.date(d -> d.format("yyyy-MM-dd HH:mm:ss"))))
+                .settings(s -> s.numberOfShards("1")
+                        .numberOfReplicas("0")
+                        .maxResultWindow(Integer.MAX_VALUE)));
         CreateIndexResponse createIndexResponse = esClient.indices().create(request);
         System.out.println("createIndexResponse:" + createIndexResponse.acknowledged());
     }
@@ -512,7 +532,9 @@ class TjpApplicationTests {
             br.operations(op -> op.index(idx -> idx.index(index).document(dto)));
         }
         BulkResponse result = esClient.bulk(br.build());
-        System.out.println(result.errors());
+        if (result.errors()) {
+            System.out.println(result);
+        }
     }
 
 

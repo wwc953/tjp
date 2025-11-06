@@ -13,11 +13,11 @@ import java.util.Date;
 
 @Data
 //@Document(indexName = "loginfo_#{T(java.time.LocalDate).now().toString().replaceAll(\"-\", \"\")}")
-@Document(indexName = "loginfo")
-@Setting(settingPath = "/json/setting.json")
+//@Document(indexName = "loginfo")
+//@Setting(settingPath = "/json/setting.json")
 public class IndexOrNameData {
 
-    @Id
+//    @Id
     private String id;
 
     @ExcelProperty("产品名称")
@@ -43,7 +43,7 @@ public class IndexOrNameData {
 
     @ExcelProperty("操作时间")
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
-    @Field(type = FieldType.Date, format = {}, pattern = "yyyy-MM-dd HH:mm:ss")
+//    @Field(type = FieldType.Date, format = {}, pattern = "yyyy-MM-dd HH:mm:ss")
     private Date systemTime;
 
     @ExcelProperty("人员姓名")
