@@ -3,6 +3,7 @@ package org.example.tjp;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.Time;
 import co.elastic.clients.elasticsearch._types.aggregations.*;
 import co.elastic.clients.elasticsearch._types.query_dsl.*;
 import co.elastic.clients.elasticsearch.core.*;
@@ -56,8 +57,6 @@ class TjpApplicationTests {
     String readFilePath = "src/main/resources/xlsx/" + fileName;
     String day = fileName.split("\\.")[0].replaceAll("-", "");
     String index = "loginfo";
-    //    String index = index_all + "_" + day;
-    String type = "_doc";
     String path = "src/main/resources/xlsx/";
 
     //求和
@@ -68,9 +67,6 @@ class TjpApplicationTests {
 
     @Autowired
     ElasticsearchClient esClient;
-
-    @Autowired
-    IndexOrNameDataEsDao indexOrNameDataEsDao;
 
     @Autowired
     ResourceLoader resourceLoader;
@@ -87,25 +83,24 @@ class TjpApplicationTests {
 
     @Test
     public void doExpAll() {
-//        index = index_all;
-
         Arrays.asList("32101", "32401", "32402").forEach(v -> {
-            expDay(ContantUtil.CITY, List.of(v));
+            expDay(ContantUtil.CITY, List.of(v), null, true);
         });
 
         //睢宁县供电公司、高邮供电公司省网
-        expDay(ContantUtil.COUNTRY, Arrays.asList("3240307", "3241008"), false);
-        //导出明细
-        expDetail();
+//        expDay(ContantUtil.COUNTRY, Arrays.asList("3240307", "3241008"), false);
 
-        //溧水,睢宁
-        Arrays.asList("3240106", "3240307").forEach(v -> {
+
+        //溧水,睢宁,高邮
+        Arrays.asList("3240106", "3240307", "3241008").forEach(v -> {
             expDay(ContantUtil.COUNTRY, List.of(v),
+                    null,
 //                    Arrays.asList("ywbl", "sbck"),//业务办理、设备操控
                     true);
         });
 
-//        expDay(ContantUtil.MGT, null, false);
+        //导出明细
+        expDetail();
     }
 
     @SneakyThrows
@@ -147,37 +142,13 @@ class TjpApplicationTests {
     @Test
     public void delByQuery() {
         log.info("{}", day);
-        DeleteByQueryResponse deleteByQueryResponse = esClient.deleteByQuery(DeleteByQueryRequest.of(
-                q -> q.query(
-                        DateRangeQuery.of(a -> a.field("systemTime")
-                                .format("yyyyMMdd").timeZone("+08:00")
-                                .gte(day).lte(day)
-                        )._toRangeQuery()
-                ).index(index)
-        ));
+        DeleteByQueryResponse deleteByQueryResponse = esClient.deleteByQuery(DeleteByQueryRequest.of(q -> q.query(DateRangeQuery.of(a -> a.field("systemTime").format("yyyyMMdd").timeZone("+08:00").gte(day).lte(day))._toRangeQuery()).index(index)));
         log.info("deleteByQuery {}", deleteByQueryResponse.deleted());
-    }
-
-    public void expDay(String type, List<String> mgtOrgCode) {
-        expDay(type, mgtOrgCode, null, true);
-    }
-
-    public void expDay(String type, List<String> mgtOrgCode, boolean next) {
-        expDay(type, mgtOrgCode, null, next);
     }
 
     @SneakyThrows
     public void expDay(String type, List<String> mgtOrgCode, List<String> excludeColumnFieldNameList, boolean next) {
-        BoolQuery.Builder rootQuery = QueryBuilders.bool()
-                .must(
-                        QueryBuilders.bool()
-                                .mustNot(buildTermsQuery("operView.keyword", Arrays.asList("退出机器人", "连接成功", "连接失败", "关闭助理", "通知唤醒", "初始化机器人")))
-                                .mustNot(QueryBuilders.bool()
-                                        .mustNot(QueryBuilders.exists(e -> e.field("linkName")))
-                                        .mustNot(buildTermsQuery("operView.keyword", Arrays.asList("语音唤醒", "点击唤醒")))
-                                        .build())
-                                .build()
-                );
+        BoolQuery.Builder rootQuery = QueryBuilders.bool().must(QueryBuilders.bool().mustNot(buildTermsQuery("operView.keyword", Arrays.asList("退出机器人", "连接成功", "连接失败", "关闭助理", "通知唤醒", "初始化机器人"))).mustNot(QueryBuilders.bool().mustNot(QueryBuilders.exists(e -> e.field("linkName"))).mustNot(buildTermsQuery("operView.keyword", Arrays.asList("语音唤醒", "点击唤醒"))).build()).build());
 
         if (CollectionUtils.isNotEmpty(mgtOrgCode)) {
             if (ContantUtil.CITY.equals(type) && !"32101".equals(mgtOrgCode.get(0))) {
@@ -205,36 +176,21 @@ class TjpApplicationTests {
 
         Map<String, Aggregation> map = new HashMap<>();
 
-        Query filterzlrs = QueryBuilders.bool()
-                .mustNot(buildTermsQuery("operView.keyword", Arrays.asList("点击唤醒", "语音唤醒")))
-                .build()._toQuery();
+        Query filterzlrs = QueryBuilders.bool().mustNot(buildTermsQuery("operView.keyword", Arrays.asList("点击唤醒", "语音唤醒"))).build()._toQuery();
 
-        Query filterzc = QueryBuilders.bool()
-                .must(TermQuery.of(a -> a.field("operType.keyword").value("装拆作业")))
-                .must(TermQuery.of(a -> a.field("appNo.keyword").value("_")))
-                .build()._toQuery();
+        Query filterzc = QueryBuilders.bool().must(TermQuery.of(a -> a.field("operType.keyword").value("装拆作业"))).must(TermQuery.of(a -> a.field("appNo.keyword").value("_"))).build()._toQuery();
 
-        Query filterznzscll = QueryBuilders.bool()
-                .must(TermQuery.of(a -> a.field("operType.keyword").value("装拆作业")))
-                .mustNot(TermQuery.of(a -> a.field("appNo.keyword").value("_")))
-                .build()._toQuery();
+        Query filterznzscll = QueryBuilders.bool().must(TermQuery.of(a -> a.field("operType.keyword").value("装拆作业"))).mustNot(TermQuery.of(a -> a.field("appNo.keyword").value("_"))).build()._toQuery();
 
         map.put("oper_type", TermsAggregation.of(a -> a.field("operType.keyword").size(1000))._toAggregation());
         map.put("dis_rs", CardinalityAggregation.of(a -> a.field("handleId.keyword"))._toAggregation());
-        map.put("filter_zlrs", new Aggregation.Builder().filter(filterzlrs)
-                .aggregations("dis_zlrs", CardinalityAggregation.of(a -> a.field("handleId.keyword"))).build());
+        map.put("filter_zlrs", new Aggregation.Builder().filter(filterzlrs).aggregations("dis_zlrs", CardinalityAggregation.of(a -> a.field("handleId.keyword"))).build());
         map.put("filter_zc", new Aggregation.Builder().filter(filterzc).build());
-        map.put("filter_znzscll", new Aggregation.Builder().filter(filterznzscll)
-                .aggregations("znzscll_dis", CardinalityAggregation.of(a -> a.field("appNo.keyword"))).build());
+        map.put("filter_znzscll", new Aggregation.Builder().filter(filterznzscll).aggregations("znzscll_dis", CardinalityAggregation.of(a -> a.field("appNo.keyword"))).build());
 
-        Aggregation aggregation = new Aggregation.Builder()
-                .terms(new TermsAggregation.Builder().field(field + ".keyword").size(2000)
-                        .order(NamedValue.of("_key", SortOrder.Asc)).build())
-                .aggregations(map)
-                .build();
+        Aggregation aggregation = new Aggregation.Builder().terms(new TermsAggregation.Builder().field(field + ".keyword").size(2000).order(NamedValue.of("_key", SortOrder.Asc)).build()).aggregations(map).build();
 
-        SearchRequest searchRequest = SearchRequest.of(s -> s.index(index).query(build).size(0)
-                .aggregations("mgtorg_agg", aggregation));
+        SearchRequest searchRequest = SearchRequest.of(s -> s.index(index).query(build).size(0).aggregations("mgtorg_agg", aggregation));
 
         System.out.println(searchRequest.toString());
         SearchResponse<Void> searchResponse = esClient.search(searchRequest);
@@ -363,8 +319,7 @@ class TjpApplicationTests {
             BeanUtils.copyProperties(v, expVOExpNew);
             res.add(expVOExpNew);
         });
-        EasyExcel.write(fileName, ExpVOExpNew.class).excludeColumnFieldNames(excludeColumnFieldNames)
-                .useDefaultStyle(false).registerWriteHandler(new LongestMatchColumnWidthStyleStrategy()).sheet("").doWrite(res);
+        EasyExcel.write(fileName, ExpVOExpNew.class).excludeColumnFieldNames(excludeColumnFieldNames).useDefaultStyle(false).registerWriteHandler(new LongestMatchColumnWidthStyleStrategy()).sheet("").doWrite(res);
 
 
     }
@@ -389,9 +344,6 @@ class TjpApplicationTests {
         });
 
         String fileName = path;
-//        if (!StringUtils.equals(index, index_all)) {
-//            fileName += day;
-//        }
         try (ExcelWriter excelWriter = EasyExcel.write(fileName + "操作明细.xlsx").useDefaultStyle(false).registerWriteHandler(new LongestMatchColumnWidthStyleStrategy()).build()) {
             for (int i = 0; i < initList.size(); i++) {
                 QueryAO ao = initList.get(i);
@@ -413,19 +365,12 @@ class TjpApplicationTests {
 
         BoolQuery.Builder rootQuery = QueryBuilders.bool();
 
-        BoolQuery bp1 = QueryBuilders.bool()
-                .mustNot(buildTermsQuery("operView.keyword", Arrays.asList("退出机器人", "连接成功", "连接失败", "关闭助理", "通知唤醒", "初始化机器人")))
-                .mustNot(QueryBuilders.bool()
-                        .mustNot(QueryBuilders.exists(e -> e.field("linkName")))
-                        .mustNot(buildTermsQuery("operView.keyword", Arrays.asList("语音唤醒", "点击唤醒")))
-                        .build())
-                .mustNot(QueryBuilders.term(t -> t.field("operType.keyword").value("唤醒")))
-                .build();
+        BoolQuery bp1 = QueryBuilders.bool().mustNot(buildTermsQuery("operView.keyword", Arrays.asList("退出机器人", "连接成功", "连接失败", "关闭助理", "通知唤醒", "初始化机器人"))).mustNot(QueryBuilders.bool().mustNot(QueryBuilders.exists(e -> e.field("linkName"))).mustNot(buildTermsQuery("operView.keyword", Arrays.asList("语音唤醒", "点击唤醒"))).build()).mustNot(QueryBuilders.term(t -> t.field("operType.keyword").value("唤醒"))).build();
         rootQuery.must(bp1);
 
-        if (StringUtils.equals(type, ContantUtil.CITY)) {
+        if (StringUtils.equals(queryType, ContantUtil.CITY)) {
             queryType = ContantUtil.CITY;
-        } else if (StringUtils.equals(type, ContantUtil.MGT)) {
+        } else if (StringUtils.equals(queryType, ContantUtil.MGT)) {
             queryType = ContantUtil.MGT;
         }
         rootQuery.filter(buildTermsQuery(queryType + ".keyword", codeList));
@@ -444,11 +389,7 @@ class TjpApplicationTests {
     }
 
     public TermsQuery buildTermsQuery(String field, List<String> value) {
-        return TermsQuery.of(t -> t.field(field).terms(
-                new TermsQueryField.Builder().value(
-                        value.stream().map(FieldValue::of).collect(Collectors.toList())
-                ).build())
-        );
+        return TermsQuery.of(t -> t.field(field).terms(new TermsQueryField.Builder().value(value.stream().map(FieldValue::of).collect(Collectors.toList())).build()));
     }
 
     public void initProList() {
@@ -499,17 +440,13 @@ class TjpApplicationTests {
         EasyExcel.read(file, IndexOrNameData.class, new ReadListener<IndexOrNameData>() {
             int blank = 0;
             int total = 0;
-            final int BATCH_COUNT = 1000;
+            final int BATCH_COUNT = 500;
             List<IndexOrNameData> dataList = ListUtils.newArrayListWithExpectedSize(BATCH_COUNT);
             int insert = 0;
 
             @SneakyThrows
             @Override
             public void invoke(IndexOrNameData dto, AnalysisContext analysisContext) {
-//                if (StringUtils.equals(dto.getHandleId(), "jiangs18")) {
-//                    SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-//                    System.out.println("jiangs18--" + format.format(dto.getSystemTime()));
-//                }
                 dto.setCityCode(StringUtils.substring(dto.getMgtOrgCode(), 0, 5));
                 dto.setCityCodeName(codeMap.get(dto.getCityCode()).getMgtOrgCodeName());
                 dto.setCountryCode(StringUtils.substring(dto.getMgtOrgCode(), 0, 7));
@@ -563,24 +500,7 @@ class TjpApplicationTests {
             System.out.println(index + ",已存在");
             return;
         }
-        CreateIndexRequest request = CreateIndexRequest.of(b -> b
-                .index(index)
-                .mappings(m -> m
-                        .properties("systemTime", p -> p
-                                .date(d -> d.format("yyyy-MM-dd HH:mm:ss"))
-                        )
-                        .properties("procName", p -> p
-                                .text(t -> t
-                                        .fields("keyword", f -> f.keyword(k -> k.ignoreAbove(256)))
-                                )
-                        )
-                )
-                .settings(s -> s
-                        .numberOfShards("1")
-                        .numberOfReplicas("0")
-                        .maxResultWindow(Integer.MAX_VALUE)
-                )
-        );
+        CreateIndexRequest request = CreateIndexRequest.of(b -> b.index(index).mappings(m -> m.properties("systemTime", p -> p.date(d -> d.format("yyyy-MM-dd HH:mm:ss")))).settings(s -> s.numberOfShards("1").numberOfReplicas("0").maxResultWindow(Integer.MAX_VALUE)));
         CreateIndexResponse createIndexResponse = esClient.indices().create(request);
         System.out.println("createIndexResponse:" + createIndexResponse.acknowledged());
     }
@@ -588,31 +508,11 @@ class TjpApplicationTests {
     @SneakyThrows
     public void batchCreateUserDocument(List<IndexOrNameData> list) {
         BulkRequest.Builder br = new BulkRequest.Builder();
-        for (IndexOrNameData product : list) {
-            br.operations(op -> op
-                    .index(idx -> idx
-                            .index(index)
-                            .id(product.getId())
-                            .document(product)
-                    )
-            );
+        for (IndexOrNameData dto : list) {
+            br.operations(op -> op.index(idx -> idx.index(index).document(dto)));
         }
         BulkResponse result = esClient.bulk(br.build());
-//        System.out.println(result.errors());
-//        return result.errors();
-
-        //导入耗时:393151 saveAll
-        // size: 590Mi (590Mi)
-        //docs: 2,693,827 (2,693,827)
-
-        //导入耗时:158047 bulk
-//        size: 585Mi (585Mi)
-//        docs: 2,693,827 (2,693,827)
-
-        //导入耗时:125863 6.3 bulk
-        // size: 671Mi (671Mi)
-        // docs: 2,693,827 (2,693,827)
-//        indexOrNameDataEsDao.saveAll(list);
+        System.out.println(result.errors());
     }
 
 
