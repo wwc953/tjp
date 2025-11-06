@@ -154,8 +154,7 @@ class TjpApplicationTests {
         log.info("deleteByQuery {}", deleteByQueryResponse.deleted());
     }
 
-    @SneakyThrows
-    public void expDay(String type, List<String> mgtOrgCode, List<String> excludeColumnFieldNameList, boolean next) {
+    BoolQuery buildQuery(String queryType, List<String> mgtOrgCode) {
         BoolQuery.Builder rootQuery = QueryBuilders.bool()
                 .must(QueryBuilders.bool()
                         .mustNot(buildTermsQuery("operView.keyword", Arrays.asList("退出机器人", "连接成功", "连接失败", "关闭助理", "通知唤醒", "初始化机器人")))
@@ -166,20 +165,25 @@ class TjpApplicationTests {
                         .build());
 
         if (CollectionUtils.isNotEmpty(mgtOrgCode)) {
-            if (ContantUtil.CITY.equals(type) && !"32101".equals(mgtOrgCode.get(0))) {
+            if (ContantUtil.CITY.equals(queryType) && !"32101".equals(mgtOrgCode.get(0))) {
                 rootQuery.filter(buildTermsQuery("cityCode.keyword", mgtOrgCode));
             }
-            if (ContantUtil.COUNTRY.equals(type)) {
+            if (ContantUtil.COUNTRY.equals(queryType)) {
                 rootQuery.filter(buildTermsQuery("countryCode.keyword", mgtOrgCode));
             }
-            if (ContantUtil.MGT.equals(type)) {
+            if (ContantUtil.MGT.equals(queryType)) {
                 rootQuery.filter(buildTermsQuery("mgtOrgCode.keyword", mgtOrgCode));
             }
         }
         rootQuery.filter(buildDateQuery());
 
         BoolQuery build = rootQuery.build();
+        return build;
+    }
 
+    @SneakyThrows
+    public void expDay(String type, List<String> mgtOrgCode, List<String> excludeColumnFieldNameList, boolean next) {
+        BoolQuery query = buildQuery(type, mgtOrgCode);
         String field = type;
         if (next) {
             if (ContantUtil.CITY.equals(type)) {
@@ -206,7 +210,7 @@ class TjpApplicationTests {
 
         Aggregation aggregation = new Aggregation.Builder().terms(new TermsAggregation.Builder().field(field + ".keyword").size(2000).order(NamedValue.of("_key", SortOrder.Asc)).build()).aggregations(map).build();
 
-        SearchRequest searchRequest = SearchRequest.of(s -> s.index(index).query(build).size(0).aggregations("mgtorg_agg", aggregation));
+        SearchRequest searchRequest = SearchRequest.of(s -> s.index(index).query(query).size(0).aggregations("mgtorg_agg", aggregation));
 
         System.out.println(searchRequest.toString());
         SearchResponse<Void> searchResponse = esClient.search(searchRequest);
@@ -297,6 +301,8 @@ class TjpApplicationTests {
             }
         }
 
+        Map<String, ExpVO> rs = expDayLj(type, mgtOrgCode, next).stream().collect(Collectors.toMap(ExpVO::getMgtOrgCode, v -> v));
+
         Map<String, ExpVO> collect = result.stream().collect(Collectors.toMap(ExpVO::getMgtOrgCode, v -> v));
         dataList.forEach(v -> {
             ExpVO expVO = collect.get(v.getMgtOrgCode());
@@ -306,6 +312,11 @@ class TjpApplicationTests {
                 v.setMgtOrgCodeName(mgtOrgCodeName);
             } else {
                 System.out.println(v.getMgtOrgCode() + "--无数据");
+            }
+            ExpVO expVO1 = rs.get(v.getMgtOrgCode());
+            if (expVO1 != null) {
+                v.setSyrs(expVO1.getDisRsSum());
+                v.setZlsyrs(expVO1.getDisZlrsSum());
             }
         });
 
@@ -339,6 +350,68 @@ class TjpApplicationTests {
 
 
     }
+
+
+    @Test
+    void expDayLjTest() {
+        expDayLj(ContantUtil.CITY, Arrays.asList("32101"), true);
+    }
+
+    @SneakyThrows
+    public List<ExpVO> expDayLj(String type, List<String> mgtOrgCode, boolean next) {
+        System.out.println(index);
+        String field = type;
+        if (next) {
+            if (ContantUtil.CITY.equals(type)) {
+                field = "32101".equals(mgtOrgCode.get(0)) ? ContantUtil.CITY : ContantUtil.COUNTRY;
+            }
+            if (ContantUtil.COUNTRY.equals(type) || ContantUtil.MGT.equals(type)) {
+                field = ContantUtil.MGT;
+            }
+        }
+        String finalField = field;
+
+        Aggregation mgtorg_agg = new Aggregation.Builder().terms(TermsAggregation.of(t -> t.field(finalField + ".keyword").size(2000).order(NamedValue.of("_key", SortOrder.Asc))))
+                .aggregations("dateHistogram",
+                        new Aggregation.Builder().dateHistogram(DateHistogramAggregation.of(da -> da.field("").calendarInterval(CalendarInterval.Day).format("yyyy-MM-dd")))
+                                .aggregations("dis_rs", AggregationBuilders.cardinality(s -> s.field("handleId.keyword")))
+                                .aggregations("filter_zlrs",
+                                        new Aggregation.Builder().filter(BoolQuery.of(b -> b.mustNot(buildTermsQuery("operView.keyword", Arrays.asList("点击唤醒", "语音唤醒"))))._toQuery())
+                                                .aggregations("dis_zlrs", CardinalityAggregation.of(s -> s.field("handleId.keyword"))).build()).build()
+                )
+                .aggregations("dis_rs_sum", SumBucketAggregation.of(s -> s.bucketsPath(BucketsPath.of(bf -> bf.single("dateHistogram>dis_rs")))))
+                .aggregations("dis_zlrs_sum", SumBucketAggregation.of(ss -> ss.bucketsPath(BucketsPath.of(bf -> bf.single("dateHistogram>filter_zlrs>dis_zlrs")))))
+                .build();
+
+        SearchRequest searchRequest = SearchRequest.of(s -> s.index(index).size(0)
+                .query(buildQuery(type, mgtOrgCode))
+                .aggregations("mgtorg_agg", mgtorg_agg));
+        System.out.println(searchRequest.toString());
+        SearchResponse<Void> searchResponse = esClient.search(searchRequest);
+
+        List<ExpVO> result = new ArrayList<>();
+
+        List<StringTermsBucket> mgtorgAgg = searchResponse.aggregations().get("mgtorg_agg").sterms().buckets().array();
+        for (StringTermsBucket bucket : mgtorgAgg) {
+            String key = bucket.key().stringValue();
+            if ("32101".equals(key)) {
+                continue;
+            }
+            ExpVO expVO = new ExpVO();
+            expVO.setMgtOrgCode(key);
+
+//            Map<String, Aggregation> map = bucket.aggregations().get().asMap();
+//            expVO.setDisRsSum((long) ((ParsedSimpleValue) map.get("dis_rs_sum")).value());
+//            expVO.setDisZlrsSum((long) ((ParsedSimpleValue) map.get("dis_zlrs_sum")).value());
+
+            expVO.setDisRsSum((long) bucket.aggregations().get("dis_rs_sum").sum().value());
+            expVO.setDisZlrsSum((long) bucket.aggregations().get("dis_zlrs_sum").sum().value());
+
+            result.add(expVO);
+        }
+        return result;
+    }
+
 
     @SneakyThrows
     public void refresh(String index) {
